@@ -238,7 +238,6 @@ namespace RdpDsViewer
 
         private object syncRead = new object();
         private HGlobalBuffer readBuff;
-        private ContextCallback SyncCtx;
         private BlockingCollection<PendingWrite> Writes = new BlockingCollection<PendingWrite>();
         private readonly Thread thRead;
 
@@ -277,11 +276,8 @@ namespace RdpDsViewer
                     offset += copied;
                     size -= copied;
 
-                    SyncCtx.Invoke(() =>
-                    {
-                        //Debug.WriteLine($"{Name}: Read  Completed {destBuff.PayloadOffset:0000}:{destBuff.PayloadSize:00000} flags {destBuff.Flags} buffer {destBuff.GetHashCode():x8}");
-                        events.OnReadCompleted(destBuff);
-                    });
+                    //Debug.WriteLine($"{Name}: Read  Completed {destBuff.PayloadOffset:0000}:{destBuff.PayloadSize:00000} flags {destBuff.Flags} buffer {destBuff.GetHashCode():x8}");
+                    events.OnReadCompleted(destBuff);
                 }
 
                 wr.Complete();
@@ -303,11 +299,8 @@ namespace RdpDsViewer
 
             internal void Complete()
             {
-                Writer.SyncCtx.Invoke(() =>
-                {
-                    //Debug.WriteLine($"{Writer.Name}: Write Completed {SrcBuf.PayloadOffset:0000}:{SrcBuf.PayloadSize:00000} flags {SrcBuf.Flags} buffer {SrcBuf.GetHashCode():x8}");
-                    Writer.events.OnWriteCompleted(SrcBuf);
-                });
+                //Debug.WriteLine($"{Writer.Name}: Write Completed {SrcBuf.PayloadOffset:0000}:{SrcBuf.PayloadSize:00000} flags {SrcBuf.Flags} buffer {SrcBuf.GetHashCode():x8}");
+                Writer.events.OnWriteCompleted(SrcBuf);
             }
         }
 
@@ -348,8 +341,7 @@ namespace RdpDsViewer
         IRDPSRAPITransportStreamEvents events;
         void IRDPSRAPITransportStream.Open(RDPTransportStreamEvents pCallbacks)
         {
-            SyncCtx = new ContextCallback();
-            events = (IRDPSRAPITransportStreamEvents)pCallbacks;
+            events = (IRDPSRAPITransportStreamEvents)(object)pCallbacks;
         }
 
         void IRDPSRAPITransportStream.Close()
@@ -360,10 +352,7 @@ namespace RdpDsViewer
 
         private void OnClose()
         {
-            SyncCtx.Invoke(() =>
-            {
-                events.OnStreamClosed(0 /* S_OK */);
-            });
+            events.OnStreamClosed(0 /* S_OK */);
         }
 
         public string Name { get; }
