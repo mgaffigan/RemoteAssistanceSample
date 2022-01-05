@@ -188,13 +188,22 @@ namespace RdpDsViewer
 
         private readonly IContextCallback context;
 
-        public ContextCallback()
+        public ContextCallback(string Name)
         {
-            this.context = (IContextCallback)CoGetObjectContext(typeof(IContextCallback).GUID);
+            if (Name == "Viewer")
+            {
+                this.context = (IContextCallback)CoGetObjectContext(typeof(IContextCallback).GUID);
+            }
         }
 
         public void Invoke(Action action)
         {
+            if (context == null)
+            {
+                action();
+                return;
+            }
+
             var thunk = new Thunk(action);
             context.ContextCallback(thunk.DelegatePtr, IntPtr.Zero,
                 IID_ICallbackWithNoReentrancyToApplicationSTA,
@@ -348,7 +357,7 @@ namespace RdpDsViewer
         IRDPSRAPITransportStreamEvents events;
         void IRDPSRAPITransportStream.Open(RDPTransportStreamEvents pCallbacks)
         {
-            SyncCtx = new ContextCallback();
+            SyncCtx = new ContextCallback(Name);
             events = (IRDPSRAPITransportStreamEvents)pCallbacks;
         }
 
