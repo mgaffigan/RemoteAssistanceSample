@@ -247,9 +247,10 @@ namespace RdpDsViewer
 
         private object syncRead = new object();
         private HGlobalBuffer readBuff;
-        private ContextCallback SyncCtx;
         private BlockingCollection<PendingWrite> Writes = new BlockingCollection<PendingWrite>();
         private readonly Thread thRead;
+        private IRDPSRAPITransportStreamEvents _events;
+        private IAgileReference eventReference;
 
         public RdsDsTransportStream(string v)
         {
@@ -258,6 +259,23 @@ namespace RdpDsViewer
             this.thRead.IsBackground = true;
             this.thRead.Name = $"{v} reader";
             this.thRead.Start();
+        }
+
+        private IRDPSRAPITransportStreamEvents Events
+        {
+            get
+            {
+                lock (syncRead)
+                {
+                    if (_events == null)
+                    {
+                        _events = (IRDPSRAPITransportStreamEvents)eventReference.Resolve(typeof(IRDPSRAPITransportStreamEvents).GUID);
+                        eventReference = null;
+                    }
+
+                    return _events;
+                }
+            }
         }
 
         private void thRead_Main()
@@ -286,11 +304,8 @@ namespace RdpDsViewer
                     offset += copied;
                     size -= copied;
 
-                    SyncCtx.Invoke(() =>
-                    {
-                        //Debug.WriteLine($"{Name}: Read  Completed {destBuff.PayloadOffset:0000}:{destBuff.PayloadSize:00000} flags {destBuff.Flags} buffer {destBuff.GetHashCode():x8}");
-                        events.OnReadCompleted(destBuff);
-                    });
+                    //Debug.WriteLine($"{Name}: Read  Completed {destBuff.PayloadOffset:0000}:{destBuff.PayloadSize:00000} flags {destBuff.Flags} buffer {destBuff.GetHashCode():x8}");
+                    Events.OnReadCompleted(destBuff);
                 }
 
                 wr.Complete();
@@ -312,11 +327,8 @@ namespace RdpDsViewer
 
             internal void Complete()
             {
-                Writer.SyncCtx.Invoke(() =>
-                {
-                    //Debug.WriteLine($"{Writer.Name}: Write Completed {SrcBuf.PayloadOffset:0000}:{SrcBuf.PayloadSize:00000} flags {SrcBuf.Flags} buffer {SrcBuf.GetHashCode():x8}");
-                    Writer.events.OnWriteCompleted(SrcBuf);
-                });
+                //Debug.WriteLine($"{Writer.Name}: Write Completed {SrcBuf.PayloadOffset:0000}:{SrcBuf.PayloadSize:00000} flags {SrcBuf.Flags} buffer {SrcBuf.GetHashCode():x8}");
+                Writer.Events.OnWriteCompleted(SrcBuf);
             }
         }
 
@@ -354,11 +366,26 @@ namespace RdpDsViewer
             }
         }
 
-        IRDPSRAPITransportStreamEvents events;
+        enum AGILEREFERENCE_DEFAULT { Default, DelayedMarshal }
+
+        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("c03f6a43-65a4-9818-987e-e0b810d2a6f2")]
+        interface IAgileReference
+        {
+            [return: MarshalAs(UnmanagedType.Interface, IidParameterIndex = 0)]
+            object Resolve([In, MarshalAs(UnmanagedType.LPStruct)] Guid riid);
+        }
+
+        [DllImport("ole32.dll", ExactSpelling = true, PreserveSig = false)]
+        [return: MarshalAs(UnmanagedType.Interface)]
+        static extern IAgileReference RoGetAgileReference(
+            AGILEREFERENCE_DEFAULT options,
+            [In, MarshalAs(UnmanagedType.LPStruct)] Guid riid,
+            [In, MarshalAs(UnmanagedType.IUnknown)] object pUnk
+        );
+
         void IRDPSRAPITransportStream.Open(RDPTransportStreamEvents pCallbacks)
         {
-            SyncCtx = new ContextCallback(Name);
-            events = (IRDPSRAPITransportStreamEvents)pCallbacks;
+            eventReference = RoGetAgileReference(AGILEREFERENCE_DEFAULT.Default, typeof(IRDPSRAPITransportStreamEvents).GUID, pCallbacks);
         }
 
         void IRDPSRAPITransportStream.Close()
@@ -369,10 +396,7 @@ namespace RdpDsViewer
 
         private void OnClose()
         {
-            SyncCtx.Invoke(() =>
-            {
-                events.OnStreamClosed(0 /* S_OK */);
-            });
+            Events.OnStreamClosed(0 /* S_OK */);
         }
 
         public string Name { get; }
