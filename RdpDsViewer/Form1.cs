@@ -250,7 +250,7 @@ namespace RdpDsViewer
         private BlockingCollection<PendingWrite> Writes = new BlockingCollection<PendingWrite>();
         private readonly Thread thRead;
         private IRDPSRAPITransportStreamEvents _events;
-        private IAgileReference eventReference;
+        private IntPtr eventReference;
 
         public RdsDsTransportStream(string v)
         {
@@ -269,8 +269,8 @@ namespace RdpDsViewer
                 {
                     if (_events == null)
                     {
-                        _events = (IRDPSRAPITransportStreamEvents)eventReference.Resolve(typeof(IRDPSRAPITransportStreamEvents).GUID);
-                        eventReference = null;
+                        _events = (IRDPSRAPITransportStreamEvents)CoGetInterfaceAndReleaseStream(eventReference, typeof(IRDPSRAPITransportStreamEvents).GUID);
+                        eventReference = IntPtr.Zero;
                     }
 
                     return _events;
@@ -366,26 +366,23 @@ namespace RdpDsViewer
             }
         }
 
-        enum AGILEREFERENCE_DEFAULT { Default, DelayedMarshal }
-
-        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("c03f6a43-65a4-9818-987e-e0b810d2a6f2")]
-        interface IAgileReference
-        {
-            [return: MarshalAs(UnmanagedType.Interface, IidParameterIndex = 0)]
-            object Resolve([In, MarshalAs(UnmanagedType.LPStruct)] Guid riid);
-        }
-
+        // avoiding object for return to avoid .Net creating an RCW
         [DllImport("ole32.dll", ExactSpelling = true, PreserveSig = false)]
-        [return: MarshalAs(UnmanagedType.Interface)]
-        static extern IAgileReference RoGetAgileReference(
-            AGILEREFERENCE_DEFAULT options,
+        static extern IntPtr CoMarshalInterThreadInterfaceInStream(
             [In, MarshalAs(UnmanagedType.LPStruct)] Guid riid,
             [In, MarshalAs(UnmanagedType.IUnknown)] object pUnk
         );
 
+        [DllImport("ole32.dll", ExactSpelling = true, PreserveSig = false)]
+        [return: MarshalAs(UnmanagedType.Interface, IidParameterIndex = 1)]
+        static extern object Co­Get­Interface­And­Release­Stream(
+            IntPtr pStream,
+            [In, MarshalAs(UnmanagedType.LPStruct)] Guid riid
+        );
+
         void IRDPSRAPITransportStream.Open(RDPTransportStreamEvents pCallbacks)
         {
-            eventReference = RoGetAgileReference(AGILEREFERENCE_DEFAULT.Default, typeof(IRDPSRAPITransportStreamEvents).GUID, pCallbacks);
+            eventReference = CoMarshalInterThreadInterfaceInStream(typeof(IRDPSRAPITransportStreamEvents).GUID, pCallbacks);
         }
 
         void IRDPSRAPITransportStream.Close()
